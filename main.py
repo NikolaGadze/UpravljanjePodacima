@@ -4,17 +4,25 @@ from sqlalchemy.orm import Session
 from typing import List
 import models, schemas, crud, auth
 from database import SessionLocal, engine, get_db
+from auth import get_current_user
 
-# Initialize the FastAPI app
 app = FastAPI()
 
-# Create the database tables
 models.Base.metadata.create_all(bind=engine)
 
-# Security definitions for Swagger
-app.post("/login", response_model=schemas.Token)(auth.login_for_access_token)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# Dependency to get the database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.post("/login", response_model=schemas.Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    return await auth.login_for_access_token(form_data, db)
+
 @app.post("/register/patient", response_model=schemas.Patient)
 def register_patient(patient: schemas.PatientCreate, db: Session = Depends(get_db)):
     db_patient = crud.get_user(db, patient.Email)
@@ -29,34 +37,99 @@ def register_doctor(doctor: schemas.DoctorCreate, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail="Email already registered")
     return crud.create_doctor(db=db, doctor=doctor)
 
-@app.get("/appointments/patient", response_model=List[schemas.Appointment], dependencies=[Depends(auth.oauth2_scheme)])
-def read_appointments_for_patient(current_user: schemas.Patient = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.get("/appointments/patient", response_model=List[schemas.Appointment], dependencies=[Depends(oauth2_scheme)])
+async def read_appointments_for_patient(current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
     return crud.get_appointments_for_patient(db=db, patient_id=current_user.PatientID)
 
-@app.get("/appointments/doctor", response_model=List[schemas.Appointment], dependencies=[Depends(auth.oauth2_scheme)])
-def read_appointments_for_doctor(current_user: schemas.Doctor = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.get("/appointments/doctor", response_model=List[schemas.Appointment], dependencies=[Depends(oauth2_scheme)])
+async def read_appointments_for_doctor(current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
     return crud.get_appointments_for_doctor(db=db, doctor_id=current_user.DoctorID)
 
-@app.post("/appointments", response_model=schemas.Appointment, dependencies=[Depends(auth.oauth2_scheme)])
-def create_appointment(appointment: schemas.AppointmentCreate, current_user: schemas.Patient = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.get("/appointment/{appointment_id}", response_model=schemas.Appointment, dependencies=[Depends(oauth2_scheme)])
+async def read_appointment(appointment_id: int, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
+    appointment = crud.get_appointment(db=db, appointment_id=appointment_id)
+    if not appointment or appointment.PatientID != current_user.PatientID:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    return appointment
+
+@app.post("/appointments", response_model=schemas.Appointment, dependencies=[Depends(oauth2_scheme)])
+async def create_appointment(appointment: schemas.AppointmentCreate, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
     return crud.create_appointment(db=db, appointment=appointment)
 
-@app.delete("/appointments/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(auth.oauth2_scheme)])
-def delete_appointment(appointment_id: int, current_user: schemas.Doctor = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.put("/appointments/{appointment_id}", response_model=schemas.Appointment, dependencies=[Depends(oauth2_scheme)])
+async def update_appointment(appointment_id: int, appointment: schemas.AppointmentUpdate, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
+    db_appointment = crud.get_appointment(db, appointment_id)
+    if not db_appointment or db_appointment.DoctorID != current_user.DoctorID:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    return crud.update_appointment(db=db, appointment_id=appointment_id, appointment=appointment)
+
+@app.delete("/appointments/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(oauth2_scheme)])
+async def delete_appointment(appointment_id: int, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
+    db_appointment = crud.get_appointment(db, appointment_id)
+    if not db_appointment or db_appointment.DoctorID != current_user.DoctorID:
+        raise HTTPException(status_code=404, detail="Appointment not found")
     crud.delete_appointment(db=db, appointment_id=appointment_id)
 
-@app.get("/prescriptions/patient", response_model=List[schemas.Prescription], dependencies=[Depends(auth.oauth2_scheme)])
-def read_prescriptions_for_patient(current_user: schemas.Patient = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.get("/prescriptions/patient", response_model=List[schemas.Prescription], dependencies=[Depends(oauth2_scheme)])
+async def read_prescriptions_for_patient(current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
     return crud.get_prescriptions_for_patient(db=db, patient_id=current_user.PatientID)
 
-@app.get("/prescriptions/doctor", response_model=List[schemas.Prescription], dependencies=[Depends(auth.oauth2_scheme)])
-def read_prescriptions_for_doctor(current_user: schemas.Doctor = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.get("/prescriptions/doctor", response_model=List[schemas.Prescription], dependencies=[Depends(oauth2_scheme)])
+async def read_prescriptions_for_doctor(current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
     return crud.get_prescriptions_for_doctor(db=db, doctor_id=current_user.DoctorID)
 
-@app.post("/prescriptions", response_model=schemas.Prescription, dependencies=[Depends(auth.oauth2_scheme)])
-def create_prescription(prescription: schemas.PrescriptionCreate, current_user: schemas.Doctor = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.get("/prescription/{prescription_id}", response_model=schemas.Prescription, dependencies=[Depends(oauth2_scheme)])
+async def read_prescription(prescription_id: int, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
+    prescription = crud.get_prescription(db=db, prescription_id=prescription_id)
+    if not prescription or prescription.PatientID != current_user.PatientID:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    return prescription
+
+@app.post("/prescriptions", response_model=schemas.Prescription, dependencies=[Depends(oauth2_scheme)])
+async def create_prescription(prescription: schemas.PrescriptionCreate, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
     return crud.create_prescription(db=db, prescription=prescription)
 
-@app.delete("/prescriptions/{prescription_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(auth.oauth2_scheme)])
-def delete_prescription(prescription_id: int, current_user: schemas.Doctor = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+@app.put("/prescriptions/{prescription_id}", response_model=schemas.Prescription, dependencies=[Depends(oauth2_scheme)])
+async def update_prescription(prescription_id: int, prescription: schemas.PrescriptionUpdate, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
+    db_prescription = crud.get_prescription(db, prescription_id)
+    if not db_prescription or db_prescription.DoctorID != current_user.DoctorID:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    return crud.update_prescription(db=db, prescription_id=prescription_id, prescription=prescription)
+
+@app.delete("/prescriptions/{prescription_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(oauth2_scheme)])
+async def delete_prescription(prescription_id: int, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
+    db_prescription = crud.get_prescription(db, prescription_id)
+    if not db_prescription or db_prescription.DoctorID != current_user.DoctorID:
+        raise HTTPException(status_code=404, detail="Prescription not found")
     crud.delete_prescription(db=db, prescription_id=prescription_id)
+
+@app.get("/doctors", response_model=List[schemas.Doctor], dependencies=[Depends(oauth2_scheme)])
+async def get_all_doctors(db: Session = Depends(get_db)):
+    return crud.get_all_doctors(db=db)
+
+@app.put("/patient/{patient_id}", response_model=schemas.Patient, dependencies=[Depends(oauth2_scheme)])
+async def update_patient(patient_id: int, patient: schemas.PatientUpdate, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
+    if patient_id != current_user.PatientID:
+        raise HTTPException(status_code=403, detail="Not authorized to update this patient")
+    return crud.update_patient(db=db, patient_id=patient_id, patient=patient)
+
+@app.delete("/patient/{patient_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(oauth2_scheme)])
+async def delete_patient(patient_id: int, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
+    if patient_id != current_user.PatientID:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this patient")
+    crud.delete_patient(db=db, patient_id=patient_id)
+
+@app.put("/doctor/{doctor_id}", response_model=schemas.Doctor, dependencies=[Depends(oauth2_scheme)])
+async def update_doctor(doctor_id: int, doctor: schemas.DoctorUpdate, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
+    if doctor_id != current_user.DoctorID:
+        raise HTTPException(status_code=403, detail="Not authorized to update this doctor")
+    return crud.update_doctor(db=db, doctor_id=doctor_id, doctor=doctor)
+
+@app.delete("/doctor/{doctor_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(oauth2_scheme)])
+async def delete_doctor(doctor_id: int, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
+    if doctor_id != current_user.DoctorID:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this doctor")
+    crud.delete_doctor(db=db, doctor_id=doctor_id)
+
+
+

@@ -12,6 +12,15 @@ class PatientCreate(BaseModel):
     Password: str
     Phone: str
 
+class PatientUpdate(BaseModel):
+    FirstName: Optional[str] = None
+    LastName: Optional[str] = None
+    DateOfBirth: Optional[date] = None
+    Gender: Optional[str] = None
+    Email: Optional[EmailStr] = None
+    Password: Optional[str] = None
+    Phone: Optional[str] = None
+
 class Patient(BaseModel):
     PatientID: int
     FirstName: str
@@ -33,6 +42,14 @@ class DoctorCreate(BaseModel):
     Password: str
     Phone: str
 
+class DoctorUpdate(BaseModel):
+    FirstName: Optional[str] = None
+    LastName: Optional[str] = None
+    Specialty: Optional[str] = None
+    Email: Optional[EmailStr] = None
+    Password: Optional[str] = None
+    Phone: Optional[str] = None
+
 class Doctor(BaseModel):
     DoctorID: int
     FirstName: str
@@ -50,6 +67,11 @@ class AppointmentCreate(BaseModel):
     DoctorID: int
     AppointmentDate: date
 
+class AppointmentUpdate(BaseModel):
+    PatientID: Optional[int] = None
+    DoctorID: Optional[int] = None
+    AppointmentDate: Optional[date] = None
+
 class Appointment(BaseModel):
     AppointmentID: int
     PatientID: int
@@ -66,6 +88,12 @@ class PrescriptionCreate(BaseModel):
     DoctorID: int
     PrescriptionDate: date
 
+class PrescriptionUpdate(BaseModel):
+    PatientID: Optional[int] = None
+    MedicationID: Optional[int] = None
+    DoctorID: Optional[int] = None
+    PrescriptionDate: Optional[date] = None
+
 class Prescription(BaseModel):
     PrescriptionID: int
     PatientID: int
@@ -77,6 +105,14 @@ class Prescription(BaseModel):
         orm_mode = True
 
 # Medication schema
+class MedicationCreate(BaseModel):
+    Name: str
+    Dosage: str
+
+class MedicationUpdate(BaseModel):
+    Name: Optional[str] = None
+    Dosage: Optional[str] = None
+
 class Medication(BaseModel):
     MedicationID: int
     Name: str
