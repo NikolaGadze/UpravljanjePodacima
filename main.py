@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi_users import db
 from sqlalchemy.orm import Session
 from typing import List
 import models, schemas, crud, auth
+from session_manager import session_manager
 from database import SessionLocal, engine, get_db
 from auth import get_current_user
 
@@ -21,7 +23,25 @@ def get_db():
 
 @app.post("/login", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    return await auth.login_for_access_token(form_data, db)
+    user = auth.authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Incorrect email or password", headers={"WWW-Authenticate": "Bearer"})
+    session_id = session_manager.create_session(user.Email)
+    return {"access_token": session_id, "token_type": "bearer"}
+
+async def get_current_user(session_id: str = Depends(oauth2_scheme)):
+    session_data = session_manager.get_session(session_id)
+    if not session_data:
+        raise HTTPException(status_code=401, detail="Invalid session or session expired", headers={"WWW-Authenticate": "Bearer"})
+    user = crud.get_user_by_email(db, session_data['user_id'])
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid session or session expired", headers={"WWW-Authenticate": "Bearer"})
+    return user
+
+@app.post("/logout")
+async def logout(session_id: str = Depends(oauth2_scheme)):
+    session_manager.delete_session(session_id)
+    return {"message": "Successfully logged out"}
 
 @app.post("/register/patient", response_model=schemas.Patient)
 def register_patient(patient: schemas.PatientCreate, db: Session = Depends(get_db)):
