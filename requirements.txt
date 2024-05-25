@@ -9,3 +9,4 @@ bcrypt
 starlette~=0.37.2
 PyJWT
 redis
+fastapi-users[redis]

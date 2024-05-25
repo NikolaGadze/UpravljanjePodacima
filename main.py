@@ -107,11 +107,19 @@ async def delete_prescription(prescription_id: int, current_user: schemas.Doctor
 async def get_all_doctors(db: Session = Depends(get_db)):
     return crud.get_all_doctors(db=db)
 
+
 @app.put("/patient/{patient_id}", response_model=schemas.Patient, dependencies=[Depends(oauth2_scheme)])
-async def update_patient(patient_id: int, patient: schemas.PatientUpdate, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
+async def update_patient(patient_id: int, patient: schemas.PatientUpdate,
+                         current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
     if patient_id != current_user.PatientID:
         raise HTTPException(status_code=403, detail="Not authorized to update this patient")
-    return crud.update_patient(db=db, patient_id=patient_id, patient=patient)
+
+    update_data = patient.dict(exclude_unset=True)
+
+    if "Password" in update_data:
+        update_data["Password"] = auth.get_password_hash(update_data["Password"])
+
+    return crud.update_patient(db=db, patient_id=patient_id, patient=update_data)
 
 @app.delete("/patient/{patient_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(oauth2_scheme)])
 async def delete_patient(patient_id: int, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
@@ -119,11 +127,20 @@ async def delete_patient(patient_id: int, current_user: schemas.Patient = Depend
         raise HTTPException(status_code=403, detail="Not authorized to delete this patient")
     crud.delete_patient(db=db, patient_id=patient_id)
 
+
 @app.put("/doctor/{doctor_id}", response_model=schemas.Doctor, dependencies=[Depends(oauth2_scheme)])
-async def update_doctor(doctor_id: int, doctor: schemas.DoctorUpdate, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
+async def update_doctor(doctor_id: int, doctor: schemas.DoctorUpdate,
+                        current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
     if doctor_id != current_user.DoctorID:
         raise HTTPException(status_code=403, detail="Not authorized to update this doctor")
-    return crud.update_doctor(db=db, doctor_id=doctor_id, doctor=doctor)
+
+    update_data = doctor.dict(exclude_unset=True)
+
+    if "Password" in update_data:
+        update_data["Password"] = auth.get_password_hash(update_data["Password"])
+
+    return crud.update_doctor(db=db, doctor_id=doctor_id, doctor=update_data)
+
 
 @app.delete("/doctor/{doctor_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(oauth2_scheme)])
 async def delete_doctor(doctor_id: int, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):

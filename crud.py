@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import models, schemas
 from auth import get_password_hash
@@ -104,14 +105,18 @@ def delete_prescription(db: Session, prescription_id: int):
 def get_all_doctors(db: Session):
     return db.query(models.Doctor).all()
 
-def update_patient(db: Session, patient_id: int, patient: schemas.PatientUpdate):
+
+def update_patient(db: Session, patient_id: int, patient: dict):
     db_patient = db.query(models.Patient).filter(models.Patient.PatientID == patient_id).first()
-    if db_patient:
-        for key, value in patient.dict().items():
-            if value is not None:
-                setattr(db_patient, key, value)
-        db.commit()
-        db.refresh(db_patient)
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    for key, value in patient.items():
+        setattr(db_patient, key, value)
+
+    db.add(db_patient)
+    db.commit()
+    db.refresh(db_patient)
     return db_patient
 
 def delete_patient(db: Session, patient_id: int):
@@ -120,14 +125,18 @@ def delete_patient(db: Session, patient_id: int):
         db.delete(db_patient)
         db.commit()
 
-def update_doctor(db: Session, doctor_id: int, doctor: schemas.DoctorUpdate):
+
+def update_doctor(db: Session, doctor_id: int, doctor: dict):
     db_doctor = db.query(models.Doctor).filter(models.Doctor.DoctorID == doctor_id).first()
-    if db_doctor:
-        for key, value in doctor.dict().items():
-            if value is not None:
-                setattr(db_doctor, key, value)
-        db.commit()
-        db.refresh(db_doctor)
+    if not db_doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+
+    for key, value in doctor.items():
+        setattr(db_doctor, key, value)
+
+    db.add(db_doctor)
+    db.commit()
+    db.refresh(db_doctor)
     return db_doctor
 
 def delete_doctor(db: Session, doctor_id: int):
