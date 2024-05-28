@@ -3,8 +3,9 @@ from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status, Security
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Union
 import models, schemas, crud, auth
+from kafka_config import send_notification
 from session_manager import session_manager
 from database import SessionLocal, engine, get_db
 
@@ -61,15 +62,32 @@ async def read_appointments_for_doctor(current_user: schemas.Doctor = Depends(au
     return crud.get_appointments_for_doctor(db=db, doctor_id=current_user.DoctorID)
 
 @app.get("/appointment/{appointment_id}", response_model=schemas.Appointment)
-async def read_appointment(appointment_id: int, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
+async def read_appointment(appointment_id: int, current_user: Union[schemas.Patient, schemas.Doctor] = Depends(auth.get_current_user), db: Session = Depends(get_db)):
     appointment = crud.get_appointment(db=db, appointment_id=appointment_id)
-    if not appointment or appointment.PatientID != current_user.PatientID:
+    if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
-    return appointment
+
+    if (hasattr(current_user, 'PatientID') and appointment.PatientID == current_user.PatientID) or \
+       (hasattr(current_user, 'DoctorID') and appointment.DoctorID == current_user.DoctorID):
+        return appointment
+    else:
+        raise HTTPException(status_code=403, detail="Not authorized to view this appointment")
+
 
 @app.post("/appointments", response_model=schemas.Appointment)
-async def create_appointment(appointment: schemas.AppointmentCreate, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
-    return crud.create_appointment(db=db, appointment=appointment)
+async def create_appointment(appointment: schemas.AppointmentCreate,
+                             current_user: schemas.Patient = Depends(auth.get_current_patient),
+                             db: Session = Depends(get_db)):
+    new_appointment = crud.create_appointment(db=db, appointment=appointment)
+
+    message = {
+        "event": "AppointmentCreated",
+        "message": "A new appointment has been created."
+    }
+
+    send_notification("appointments", message)
+
+    return new_appointment
 
 @app.put("/appointments/{appointment_id}", response_model=schemas.Appointment)
 async def update_appointment(appointment_id: int, appointment: schemas.AppointmentUpdate, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
@@ -93,12 +111,22 @@ async def read_prescriptions_for_patient(current_user: schemas.Patient = Depends
 async def read_prescriptions_for_doctor(current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
     return crud.get_prescriptions_for_doctor(db=db, doctor_id=current_user.DoctorID)
 
+
 @app.get("/prescription/{prescription_id}", response_model=schemas.Prescription)
-async def read_prescription(prescription_id: int, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
+async def read_prescription(prescription_id: int,
+                            current_user: Union[schemas.Patient, schemas.Doctor] = Depends(auth.get_current_user),
+                            db: Session = Depends(get_db)):
     prescription = crud.get_prescription(db=db, prescription_id=prescription_id)
-    if not prescription or prescription.PatientID != current_user.PatientID:
+    if not prescription:
         raise HTTPException(status_code=404, detail="Prescription not found")
+
+    if isinstance(current_user, schemas.Patient) and prescription.PatientID != current_user.PatientID:
+        raise HTTPException(status_code=403, detail="Not authorized to access this prescription")
+    if isinstance(current_user, schemas.Doctor) and prescription.DoctorID != current_user.DoctorID:
+        raise HTTPException(status_code=403, detail="Not authorized to access this prescription")
+
     return prescription
+
 
 @app.post("/prescriptions", response_model=schemas.Prescription)
 async def create_prescription(prescription: schemas.PrescriptionCreate, current_user: schemas.Doctor = Depends(auth.get_current_doctor), db: Session = Depends(get_db)):
@@ -119,8 +147,12 @@ async def delete_prescription(prescription_id: int, current_user: schemas.Doctor
     crud.delete_prescription(db=db, prescription_id=prescription_id)
 
 @app.get("/doctors", response_model=List[schemas.Doctor])
-async def get_all_doctors(db: Session = Depends(get_db)):
+async def get_all_doctors(
+    current_patient: schemas.Patient = Depends(auth.get_current_patient),
+    db: Session = Depends(get_db)
+):
     return crud.get_all_doctors(db=db)
+
 
 @app.put("/patient/{patient_id}", response_model=schemas.Patient)
 async def update_patient(patient_id: int, patient: schemas.PatientUpdate, current_user: schemas.Patient = Depends(auth.get_current_patient), db: Session = Depends(get_db)):
