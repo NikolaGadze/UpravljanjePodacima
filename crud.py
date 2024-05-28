@@ -35,8 +35,6 @@ def create_doctor(db: Session, doctor: schemas.DoctorCreate):
     db.refresh(db_doctor)
     return db_doctor
 
-# Remaining CRUD operations for appointments, prescriptions, and medications
-# ...
 
 def get_appointments_for_patient(db: Session, patient_id: int):
     return db.query(models.Appointment).filter(models.Appointment.PatientID == patient_id).all()
