@@ -9,7 +9,7 @@ DATABASE_NAME = os.getenv('DATABASE_NAME', 'appointments')
 DATABASE_USER = os.getenv('DATABASE_USER', 'user')
 DATABASE_PASSWORD = os.getenv('DATABASE_PASSWORD', 'password')
 
-DATABASE_URL = "mysql+mysqlconnector://root:nikola911@localhost:3306/hsm"
+DATABASE_URL = "mysql+mysqlconnector://root:nikola911@mysql:3306/hsm"
 #DATABASE_URL = f"mysql+mysqlconnector://{DATABASE_USER}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
 
 engine = create_engine(DATABASE_URL)
